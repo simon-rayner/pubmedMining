@@ -3,23 +3,15 @@ import os
 from datetime import datetime
 import hashlib
 import logging
-
+import pandas as pd
 
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
-
-diseaseListFile
-countryDataFile
-journalImpactFactorDataFile
-
-dfDiseaseList
-dfCountryData
-dfJournalData
-
+from locale import atof, setlocale, LC_NUMERIC
 __all__ = []
 __version__ = 0.1
-__date__ = '2020-12-19'
-__updated__ = '2020-12-19'
+__date__ = '2022-04-19'
+__updated__ = '2022-04-19'
 
 DEBUG = 1
 TESTRUN = 0
@@ -72,7 +64,7 @@ def parseArgs(argv):
     program_version = "v%s" % __version__
     program_build_date = str(__updated__)
     program_version_message = '%%(prog)s %s (%s)' % (program_version, program_build_date)
-    program_shortdesc = __import__('__main__').__doc__.split("\n")[1]
+    #program_shortdesc = __import__('__main__').__doc__.split("\n")[1]
     program_license = '''%s
     i
       Created by Simon Rayner on %s.
@@ -85,22 +77,22 @@ def parseArgs(argv):
       or conditions of any kind, either express or implied.
     
     USAGE
-    ''' % (program_shortdesc, str(__date__))
+    ''' % (program_name, str(__date__))
 
     try:
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
-        parser.add_argument("-d", "--disease_list_file", dest="diseaseListFile", action="store", help="list of diseases with entrez results [default: %(default)s]")
-        parser.add_argument("-c", "--country_data_file", dest="countryDataFile", action="store", help="country data file [default: %(default)s]")
+        parser.add_argument("-d", "--disease_list_file", dest="diseaselistfile", action="store", help="list of diseases with entrez results [default: %(default)s]")
+        parser.add_argument("-c", "--country_data_file", dest="countrydatafile", action="store", help="country data file [default: %(default)s]")
         parser.add_argument("-j", "--journal_data_file", dest="journaldatafile", action="store", help="journal data file [default: %(default)s]")
 
         # Process arguments
         args = parser.parse_args()
 
         global diseaseListFile
-        diseaseListFile = args.diseaselistFile
+        diseaseListFile = args.diseaselistfile
         global countryDataFile
-        countryDataFile = args.countrydataFile
+        countryDataFile = args.countrydatafile
         global journalImpactFactorDataFile
         journalImpactFactorDataFile = args.journaldatafile
 
@@ -124,46 +116,142 @@ def parseArgs(argv):
 
 
 def setPaths():
-    global diseaseListFile
-    global countryDataFile
-    global journalImpactFactorDataFile
-    diseaseListFile = "/Users/simonray/DropboxUiO/dropData/text_mining/entrez_searches/disease_list.tsv"
-    countryDataFile = "/Users/simonray/DropboxUiO/dropData/text_mining/entrez_searches/countries.tsv"
-    journalImpactFactorDataFile = "/Users/simonray/DropboxUiO/dropData/text_mining/entrez_searches/journal_impact_factors.tsv"
-
+    #global diseaseListFile
+    #global countryDataFile
+    #global journalImpactFactorDataFile
+    #diseaseListFile = "/Users/simonray/DropboxUiO/dropData/text_mining/entrez_searches/disease_list.tsv"
+    #countryDataFile = "/Users/simonray/DropboxUiO/dropData/text_mining/entrez_searches/countries.tsv"
+    #journalImpactFactorDataFile = "/Users/simonray/DropboxUiO/dropData/text_mining/entrez_searches/journal_impact_factors.tsv"
+    pass
 
 def loadDiseaseList():
     global dfDiseaseList
     fDL = open(diseaseListFile, "r")
     dfDiseaseList = fDL.read().splitlines()
+    logging.info("--loaded <" + str(len(dfDiseaseList)) + "> diseases")
 
 
 def loadCountryData():
     global dfCountryData
-    fCD = open(countryDataFile, "r")
-    dfCountryData = fCD.read().splitlines()
-    print("loaded <" + str(len(diseaseList)) + "> diseases" )
+    dfCountryData = pd.read_csv(countryDataFile, sep="\t")
+    dfCountryData['country'] = dfCountryData['country'].str.rstrip()
+    dfCountryData['subregion'] = dfCountryData['subregion'].str.rstrip()
+    dfCountryData['region'] = dfCountryData['region'].str.rstrip()
+
+
+
+    logging.info("--loaded data for <" + str(len(dfCountryData)) + "> countries")
 
 def loadJournalData():
     global dfJournalData
-    fJD = open(journalImpactFactorDataFile, "r")
-    dfJournalData=fJD.read().splitlines()
+    dfJournalData = pd.read_csv(journalImpactFactorDataFile, sep="\t")
+
+    logging.info("--loaded data for <" + str(len(dfJournalData)) + "> journals")
 
 
 def parseDiseases():
-    dfDiseaseList
-    for index, disease in dfDiseaseList.iterrows():
-        logging.info(disease)
+    lSummaryStatsAllDiseases = []
+    diseaseListSummaryFile = diseaseListFile.replace(".tsv", "_summary.tsv")
+    fStats  = open(diseaseListSummaryFile, "w")
+    fStats.write('disease\tIFs\tyears\tcountries\tnoOfCountries\tnoOfPublications\n')
 
+    for diseaseFile in dfDiseaseList:
+        lSummaryStatsThisDisease = []
+        logging.info(diseaseFile)
+        diseaseName = os.path.basename(diseaseFile).split(".")[0]
+        logging.info("----parsing publications for <" + diseaseName + ">")
+
+        dfDiseasePubSet = pd.read_csv(diseaseFile, sep="\t")
+        logging.info("--loaded <" + str(len(dfDiseasePubSet)) + "> entries")
+        minIF = 1000000
+        maxIF = 0
+        IFs=[]
+        years=[]
+        allCountries=[]
+        missingCountryCount = 0
+        for indexD, publication in dfDiseasePubSet.iterrows():
+            logging.info(publication['pmid'])
+            impactFactor = dfJournalData[dfJournalData['PubMed_Title'].str.upper()==publication['title'].upper()]['Journal Impact Factor']
+            if len(impactFactor) > 0:
+                impactFactor=atof(impactFactor)
+            else:
+                impactFactor = 0.0
+            IFs.append(impactFactor)
+            if maxIF < impactFactor: maxIF = impactFactor
+            if minIF > impactFactor: minIF = impactFactor
+            years.append(publication['year'])
+            affiliations = publication['affiliations'].strip('][').split("', '")
+            if len(affiliations) > 0:
+                firstCountry = getCountryFromAffiliation(affiliations[0])
+                #if not firstCountry:
+                #    logging.info("------couldn't get first country information for <" +
+                #                 affiliations[0] + ">")
+                lastCountry = getCountryFromAffiliation(affiliations[len(affiliations)-1])
+                #if not lastCountry:
+                #    logging.info("------couldn't get last country information for <" +
+                #                 affiliations[len(affiliations)-1] + ">")
+
+                countrySet = []
+                for affiliation in affiliations:
+                    #logging.info(affiliation)
+                    country = getCountryFromAffiliation(affiliation)
+                    if country:
+                        if country not in countrySet:
+                            countrySet.append(country)
+                        if country not in allCountries:
+                            allCountries.append(country)
+                    if not country:
+                        logging.info("------couldn't get country information for <" +
+                                     affiliation + ">")
+                        missingCountryCount += 1
+
+            else:
+                logging.info("missing affiliation information")
+
+            lSummaryStatsThisDisease.append({
+                'PMID': publication['pmid'], 'year': publication['year'],
+                'impactFactor': impactFactor,
+                'firstCountry': firstCountry, 'lastCountry':lastCountry,
+                'noOfCountries': len(countrySet), 'missingCountryEntries': missingCountryCount,
+                'articleTitle': publication['articleTitle'], 'journal': publication['title']
+                                             })
+        diseaseStatsFile =  diseaseFile.replace(".tsv", "_stats.tsv")
+        pd.DataFrame(lSummaryStatsThisDisease).to_csv(diseaseStatsFile)
+        lSummaryStatsAllDiseases.append({
+            'disease': diseaseName, 'IFs':IFs, 'years': years, 'countries': allCountries,
+            'IFs': IFs, 'minIF': minIF, 'maxIF': maxIF,
+             'noOfCountries': len(countrySet),
+            'noOfPublications': len(dfDiseasePubSet)})
+        fStats.write(diseaseName + "\t"
+                                 + str(len(countrySet)) + "\t"
+                                 + str(len(dfDiseasePubSet)) + "\t"
+                                 + "|".join(str(i) for i in IFs) + "\t"
+                                 + "|".join(str(y) for y in years) + "\t"
+                                 + "|".join(str(c) for c in countrySet) + "\n")
+        logging.info("-----done")
+    fStats.close()
+
+
+def getCountryFromAffiliation(qAffiliation):
+    for indexC, countryEntry in dfCountryData.iterrows():
+        for country in countryEntry['country'].split("|"):
+            if country in qAffiliation:
+                return countryEntry['country'].split("|")[0]
+    return ""
 
 def main(argv=None): # IGNORE:C0111
-
+    setlocale(LC_NUMERIC, '')
     if argv is None:
         argv = sys.argv
 
     md5String = hashlib.md5(b"CBGAMGOUS").hexdigest()
     parseArgs(argv)
     initLogger(md5String)
+
+    loadDiseaseList()
+    loadCountryData()
+    loadJournalData()
+    parseDiseases()
 
     logging.info("project file is <" + diseaseListFile + ">")
 
@@ -172,8 +260,6 @@ if __name__ == '__main__':
 
     if DEBUG:
         pass
-
-
     if TESTRUN:
         import doctest
         doctest.testmod()
@@ -203,9 +289,9 @@ if __name__ == '__main__':
     #     (v)    get (current) impact factor of journal in which paper was published
     #
     #
-    global diseaseCount
-    diseaseCount = []
-    diseaseListFile="/Users/simonray/DropboxUiO/dropData/text_mining/animal_virus_list-shortnames.txt"
+    #global diseaseCount
+    #diseaseCount = []
+    #diseaseListFile="/Users/simonray/DropboxUiO/dropData/text_mining/animal_virus_list-shortnames.txt"
 
 
 
@@ -213,9 +299,7 @@ if __name__ == '__main__':
     #summaryStatsFile = os.path.join(outputFolder, os.path.basename(diseaseListFile).split(".")[0]+ "_stats.tsv" )
     #fStats  = open(summaryStatsFile, "w")
     #fStats.write("Disease" + "\t" + "PublicationCount" + "\n")
-    diseaseList = loadDiseaseList(diseaseListFile)
-    print("loaded <" + str(len(diseaseList)) + "> diseases" )
-    parseDiseaseList(diseaseList, outputFolder, fStats)
+
 
 
     fStats.close()
