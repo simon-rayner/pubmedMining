@@ -4,6 +4,7 @@ from datetime import datetime
 import hashlib
 import logging
 import pandas as pd
+import numpy
 
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
@@ -47,6 +48,7 @@ def initLogger(md5string):
     fileh.setFormatter(formatter)
 
     log = logging.getLogger()  # root logger
+    log.setLevel(logging.DEBUG)
     for hdlr in log.handlers[:]:  # remove all old handlers
         log.removeHandler(hdlr)
     log.addHandler(fileh)      # set the new handler
@@ -151,10 +153,24 @@ def loadJournalData():
 
 def parseDiseases():
     lSummaryStatsAllDiseases = []
+    missingJournals = []
     diseaseListSummaryFile = diseaseListFile.replace(".tsv", "_summary.tsv")
-    fStats  = open(diseaseListSummaryFile, "w")
-    fStats.write('disease\tIFs\tyears\tcountries\tnoOfCountries\tnoOfPublications\n')
+    missingJournalFile = diseaseListFile.replace(".tsv", "_missing_journals.tsv")
+    missingCountryFile = diseaseListFile.replace(".tsv", "_missing_country.tsv")
+    allPMIDsFile = diseaseListFile.replace(".tsv", "_allpmids.tsv")
+    allCountriesFile = diseaseListFile.replace(".tsv", "_allcountries.tsv")
+    allPMIDs = []
+    allCountries=[]
 
+    fJournals = open(missingJournalFile, "w")
+    fStats  = open(diseaseListSummaryFile, "w")
+    fCountry  = open(missingCountryFile, "w")
+    fAllCountries  = open(allCountriesFile, "w")
+    fAllPMIDs = open(allPMIDsFile, "w")
+
+    fStats.write('disease\tnoOfCountries\tnoOfPublications\tIFs\tyears\tcountries'
+                 '\tminIFs\tmaxIFs\tavgIFs\tmissingIFCount\tmissingCountryCount\n')
+    setlocale(LC_NUMERIC, 'no_NO')
     for diseaseFile in dfDiseaseList:
         lSummaryStatsThisDisease = []
         logging.info(diseaseFile)
@@ -167,15 +183,37 @@ def parseDiseases():
         maxIF = 0
         IFs=[]
         years=[]
-        allCountries=[]
+        countrySet = []
+
         missingCountryCount = 0
+        missingIFCount = 0
         for indexD, publication in dfDiseasePubSet.iterrows():
-            logging.info(publication['pmid'])
+            if indexD % 100 == 0:
+                print(".")
+            if indexD % 1000 == 0:
+                print("-" + str(indexD))
+
+            if publication['pmid'] not in allPMIDs:
+                allPMIDs.append(publication['pmid'])
+
+            #logging.info(publication['pmid'])
             impactFactor = dfJournalData[dfJournalData['PubMed_Title'].str.upper()==publication['title'].upper()]['Journal Impact Factor']
             if len(impactFactor) > 0:
-                impactFactor=atof(impactFactor)
+                try:
+                    impactFactor=atof(impactFactor.values[0])
+
+                except:
+                    #logging.error("couldn't get sensible IF value" + "<" + impactFactor + ">")
+                    #logging.info("I")
+                    missingJournals.append(publication['title'].upper())
+                    fJournals.write(str(publication['pmid']) + "\t" + publication['title'].upper() + "\n")
+                    impactFactor = 0.0
+                    missingIFCount+=1
+                    pass
+
             else:
                 impactFactor = 0.0
+                missingIFCount+=1
             IFs.append(impactFactor)
             if maxIF < impactFactor: maxIF = impactFactor
             if minIF > impactFactor: minIF = impactFactor
@@ -191,7 +229,7 @@ def parseDiseases():
                 #    logging.info("------couldn't get last country information for <" +
                 #                 affiliations[len(affiliations)-1] + ">")
 
-                countrySet = []
+
                 for affiliation in affiliations:
                     #logging.info(affiliation)
                     country = getCountryFromAffiliation(affiliation)
@@ -201,12 +239,17 @@ def parseDiseases():
                         if country not in allCountries:
                             allCountries.append(country)
                     if not country:
-                        logging.info("------couldn't get country information for <" +
-                                     affiliation + ">")
+                        #logging.info("------couldn't get country information for <" +
+                        #            affiliation + ">")
+                        #logging.info("C")
+
+                        fCountry.write(str(publication['pmid']) + "\t" + affiliation + "\n")
                         missingCountryCount += 1
 
             else:
-                logging.info("missing affiliation information")
+                #logging.info("missing affiliation information")
+                missingCountryCount += 1
+
 
             lSummaryStatsThisDisease.append({
                 'PMID': publication['pmid'], 'year': publication['year'],
@@ -218,18 +261,32 @@ def parseDiseases():
         diseaseStatsFile =  diseaseFile.replace(".tsv", "_stats.tsv")
         pd.DataFrame(lSummaryStatsThisDisease).to_csv(diseaseStatsFile)
         lSummaryStatsAllDiseases.append({
-            'disease': diseaseName, 'IFs':IFs, 'years': years, 'countries': allCountries,
+            'disease': diseaseName, 'IFs': IFs, 'years': years, 'countries': allCountries,
             'IFs': IFs, 'minIF': minIF, 'maxIF': maxIF,
              'noOfCountries': len(countrySet),
             'noOfPublications': len(dfDiseasePubSet)})
+
         fStats.write(diseaseName + "\t"
                                  + str(len(countrySet)) + "\t"
                                  + str(len(dfDiseasePubSet)) + "\t"
                                  + "|".join(str(i) for i in IFs) + "\t"
                                  + "|".join(str(y) for y in years) + "\t"
-                                 + "|".join(str(c) for c in countrySet) + "\n")
+                                 + "|".join(str(c) for c in countrySet) + "\t"
+                                 + str(minIF) + "\t"
+                                 + str(maxIF) + "\t"
+                                 + str(numpy.mean(IFs)) + "\t"
+                                 + str(missingIFCount) + "\t"
+                                 + str(missingCountryCount) + "\n"
+                     )
+
         logging.info("-----done")
     fStats.close()
+    for pmid in allPMIDs:
+        fAllPMIDs.write(str(pmid) + "\n")
+    fAllPMIDs.close()
+    for country in allCountries:
+        fAllCountries.write(country + "\n")
+    fAllCountries.close()
 
 
 def getCountryFromAffiliation(qAffiliation):
@@ -240,7 +297,8 @@ def getCountryFromAffiliation(qAffiliation):
     return ""
 
 def main(argv=None): # IGNORE:C0111
-    setlocale(LC_NUMERIC, '')
+
+    setlocale(LC_NUMERIC, 'no_NO')
     if argv is None:
         argv = sys.argv
 
