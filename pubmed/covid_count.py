@@ -5,6 +5,8 @@ from datetime import datetime
 import hashlib
 import logging
 import pandas as pd
+import gzip
+
 from pathlib import Path
 
 from argparse import ArgumentParser
@@ -124,8 +126,13 @@ def loadDateRanges():
 
 
 def queryDateRanges():
+    global lCovidPubsByWeek
     global dfCovidPubsByWeek
+
+    global lCovidPubsDetails
+    global dfCovidPubsDetails
     lCovidPubsByWeek = []
+    lCovidPubsDetails = []
     totalPublications = 0
     outputFolder = os.path.dirname(dateRangesFile)
 
@@ -136,16 +143,85 @@ def queryDateRanges():
         logging.info("processing <" + startDate + "-->" + endDate + ">")
         qQuery = buildEntrezDateRangeQuery(baseQueryString, startDate, endDate)
         qResult = submitEntrezQuery(qQuery)
+
+        lCovidPubsByWeek.append({"startDate": startDate, "endDate": endDate, "numberOfPublications": len(qResult['IdList']), "totalPublications":totalPublications})
+        if len(qResult['IdList']) == 9999:
+            logging.info("---skipping (returned 9999 hits) ")
+            continue
         ids = qResult['IdList'][0:2]
         totalPublications += len(ids)
         detailedResults = fetchDetailsForIDlist(ids, startDate, endDate)
         detailedResultsFile = os.path.join(outputFolder, os.path.basename(dateRangesFile).split(".")[0]
+                + "__" + startDate.replace("/","") + "__" + endDate.replace("/","") + ".xml.gz")
+        with gzip.open(detailedResultsFile, "wb") as fXML:
+            fXML.write(str(detailedResults).encode())
+        detailedResultsFile = os.path.join(outputFolder, os.path.basename(dateRangesFile).split(".")[0]
                 + "__" + startDate.replace("/","") + "__" + endDate.replace("/","") + ".xml")
-        with open(detailedResultsFile, "w") as fXML:
-            fXML.write(str(detailedResults))
+        #with open(detailedResultsFile, "w") as fXML:
+        #    fXML.write(str(detailedResults))
 
-        lCovidPubsByWeek.append({"startDate": startDate, "endDate": endDate, "numberOfPublications": len(qResult['IdList']), "totalPublications":totalPublications})
+        for pubmedArticle in detailedResults['PubmedArticle']:
+            #pubmedArticle = detailedResult['PubmedArticle']
+            # grab the interesting bits
+            #doi = str(detailedResults['PubmedArticle'][0]['MedlineCitation']['Article']['ELocationID'][0])
+            eLocationID = pubmedArticle['MedlineCitation']['Article']['ELocationID']
+
+            doi = ""
+            for id in eLocationID:
+                if 'doi' in id.attributes['EIdType']:
+                    doi = str(id)
+            language = ""
+            if len(pubmedArticle['MedlineCitation']['Article']['Language']) != 0:
+                language = pubmedArticle['MedlineCitation']['Article']['Language'][0]
+            journalISOAbbreviation = str(pubmedArticle['MedlineCitation']['Article']['Journal']['ISOAbbreviation'])
+            journalISSN = str(pubmedArticle['MedlineCitation']['Article']['Journal']['ISSN'])
+            articleTitle = str(pubmedArticle['MedlineCitation']['Article']['ArticleTitle'])
+
+            articleAbstract = ""
+            if (len(pubmedArticle['MedlineCitation']['Article']['Abstract']['AbstractText'])!= 0):
+                articleAbstract = str(pubmedArticle['MedlineCitation']['Article']['Abstract']['AbstractText'][0])
+
+            # get the pub date from the file name, because the dates in the XML are sometimes wrong
+            pubYear = startDate.split("/")[0]
+            pubMonth = int(startDate.split("/")[1])
+
+            # So, the following may give incorrect results:
+            #if len(pubmedArticle['MedlineCitation']['Article']['ArticleDate']) != 0:
+            #    pubYear = pubmedArticle['MedlineCitation']['Article']['ArticleDate'][0]['Year']
+            #else:
+            #    pubYear = pubmedArticle['MedlineCitation']['Article']['Journal']['JournalIssue']['PubDate']['Year']
+            #
+            #pubMonth = ""
+            #if len(pubmedArticle['MedlineCitation']['Article']['ArticleDate']) != 0:
+            #    pubMonth = pubmedArticle['MedlineCitation']['Article']['ArticleDate'][0]['Month']
+            #else:
+            #    pubMonth = datetime.strptime(pubmedArticle['MedlineCitation']['Article']['Journal']['JournalIssue']['PubDate']['Month'], '%b').month
+
+            authorList = pubmedArticle['MedlineCitation']['Article']['AuthorList']
+            #print(str(len(authorList)))
+            firstAuthorAffiliation = ""
+            if len(authorList[0]['AffiliationInfo']) > 0:
+                firstAuthorAffiliation = authorList[0]['AffiliationInfo'][0]['Affiliation']
+
+            lastAuthorAffiliation = ""
+            if len(authorList[len(authorList)-1]['AffiliationInfo']) > 0:
+                lastAuthorAffiliation = authorList[len(authorList)-1]['AffiliationInfo'][0]['Affiliation']
+            lCovidPubsDetails.append({"doi": doi,
+                                     "journalISOAbbreviation": journalISOAbbreviation,
+                                     "journalISSN": journalISSN,
+                                     "articleTitle": articleTitle,
+                                     "pubYear": pubYear,
+                                     "pubMonth": pubMonth,
+                                     "language": language,
+                                     "firstAuthorAffiliation": firstAuthorAffiliation,
+                                     "lastAuthorAffiliation": lastAuthorAffiliation,
+                                     "articleAbstract": articleAbstract})
+
+
+
     dfCovidPubsByWeek = pd.DataFrame(lCovidPubsByWeek)
+    dfCovidPubsDetails = pd.DataFrame(lCovidPubsDetails)
+
 
 
 def fetchDetailsForIDlist(id_list, qMindate, qMaxdate):
@@ -160,10 +236,14 @@ def fetchDetailsForIDlist(id_list, qMindate, qMaxdate):
     results = Entrez.read(handle)
     return results
 
-def writeQuerySummaryResults():
+def writeQueryResults():
     outputFolder = os.path.dirname(dateRangesFile)
     summaryStatsFile = os.path.join(outputFolder, os.path.basename(dateRangesFile).split(".")[0] + "_pubcounts.tsv")
     dfCovidPubsByWeek.to_csv(summaryStatsFile, sep="\t")
+
+    detailsFile = os.path.join(outputFolder, os.path.basename(dateRangesFile).split(".")[0] + "_details.tsv")
+    dfCovidPubsDetails.to_csv(detailsFile, sep="\t")
+
 
 
 def buildEntrezDateRangeQuery(queryString, startDate, endDate):
@@ -196,7 +276,7 @@ def main(argv=None): # IGNORE:C0111
     initLogger(md5String)
     loadDateRanges()
     queryDateRanges()
-    writeQuerySummaryResults()
+    writeQueryResults()
 
 
 if __name__ == '__main__':
