@@ -5,12 +5,13 @@ from datetime import datetime
 import hashlib
 import logging
 import pandas as pd
-import numpy
 from pathlib import Path
 
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
 from locale import atof, setlocale, LC_NUMERIC
+
+
 __all__ = []
 __version__ = 0.1
 __date__ = '2022-04-19'
@@ -126,6 +127,8 @@ def queryDateRanges():
     global dfCovidPubsByWeek
     lCovidPubsByWeek = []
     totalPublications = 0
+    outputFolder = os.path.dirname(dateRangesFile)
+
     for dateRange in dateRanges:
 
         startDate = dateRange.split("\t")[0].strip()
@@ -133,10 +136,29 @@ def queryDateRanges():
         logging.info("processing <" + startDate + "-->" + endDate + ">")
         qQuery = buildEntrezDateRangeQuery(baseQueryString, startDate, endDate)
         qResult = submitEntrezQuery(qQuery)
-        totalPublications += len(qResult['IdList'])
+        ids = qResult['IdList'][0:2]
+        totalPublications += len(ids)
+        detailedResults = fetchDetailsForIDlist(ids, startDate, endDate)
+        detailedResultsFile = os.path.join(outputFolder, os.path.basename(dateRangesFile).split(".")[0]
+                + "__" + startDate.replace("/","") + "__" + endDate.replace("/","") + ".xml")
+        with open(detailedResultsFile, "w") as fXML:
+            fXML.write(str(detailedResults))
+
         lCovidPubsByWeek.append({"startDate": startDate, "endDate": endDate, "numberOfPublications": len(qResult['IdList']), "totalPublications":totalPublications})
     dfCovidPubsByWeek = pd.DataFrame(lCovidPubsByWeek)
 
+
+def fetchDetailsForIDlist(id_list, qMindate, qMaxdate):
+    ids = ','.join(id_list)
+    Entrez.email = 'cyanidebunny@gmail.com'
+    handle = Entrez.efetch(db='pubmed',
+                           retmode='xml',
+                           mindate=qMindate,
+                           maxdate=qMaxdate,
+                           id=ids,
+                           retmax=10000)
+    results = Entrez.read(handle)
+    return results
 
 def writeQuerySummaryResults():
     outputFolder = os.path.dirname(dateRangesFile)
