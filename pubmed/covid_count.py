@@ -137,7 +137,7 @@ def queryDateRanges():
     outputFolder = os.path.dirname(dateRangesFile)
 
     for dateRange in dateRanges:
-
+        lCovidPubsDetailsByWeek = []
         startDate = dateRange.split("\t")[0].strip()
         endDate = dateRange.split("\t")[1].strip()
         logging.info("processing <" + startDate + "-->" + endDate + ">")
@@ -148,7 +148,7 @@ def queryDateRanges():
         if len(qResult['IdList']) == 9999:
             logging.info("---skipping (returned 9999 hits) ")
             continue
-        ids = qResult['IdList'][0:2]
+        ids = qResult['IdList']
         totalPublications += len(ids)
         detailedResults = fetchDetailsForIDlist(ids, startDate, endDate)
         detailedResultsFile = os.path.join(outputFolder, os.path.basename(dateRangesFile).split(".")[0]
@@ -167,19 +167,29 @@ def queryDateRanges():
             eLocationID = pubmedArticle['MedlineCitation']['Article']['ELocationID']
 
             doi = ""
+            pubmedID = str(pubmedArticle['MedlineCitation']['PMID'])
             for id in eLocationID:
                 if 'doi' in id.attributes['EIdType']:
                     doi = str(id)
+
             language = ""
             if len(pubmedArticle['MedlineCitation']['Article']['Language']) != 0:
                 language = pubmedArticle['MedlineCitation']['Article']['Language'][0]
-            journalISOAbbreviation = str(pubmedArticle['MedlineCitation']['Article']['Journal']['ISOAbbreviation'])
-            journalISSN = str(pubmedArticle['MedlineCitation']['Article']['Journal']['ISSN'])
+
+            journalISOAbbreviation = "unknown"
+            if 'ISOAbbreviation' in  pubmedArticle['MedlineCitation']['Article']['Journal'].keys():
+                journalISOAbbreviation = str(pubmedArticle['MedlineCitation']['Article']['Journal']['ISOAbbreviation'])
+
+            journalISSN = "unknown"
+            if 'ISSN' in  pubmedArticle['MedlineCitation']['Article']['Journal'].keys():
+                journalISSN = str(pubmedArticle['MedlineCitation']['Article']['Journal']['ISSN'])
+
             articleTitle = str(pubmedArticle['MedlineCitation']['Article']['ArticleTitle'])
 
-            articleAbstract = ""
-            if (len(pubmedArticle['MedlineCitation']['Article']['Abstract']['AbstractText'])!= 0):
-                articleAbstract = str(pubmedArticle['MedlineCitation']['Article']['Abstract']['AbstractText'][0])
+            articleAbstract = "none"
+            if ('Abstract' in pubmedArticle['MedlineCitation']['Article']) and ('AbstractText' in pubmedArticle['MedlineCitation']['Article']['Abstract']):
+                if (len(pubmedArticle['MedlineCitation']['Article']['Abstract']['AbstractText'])!= 0):
+                    articleAbstract = str(pubmedArticle['MedlineCitation']['Article']['Abstract']['AbstractText'][0])
 
             # get the pub date from the file name, because the dates in the XML are sometimes wrong
             pubYear = startDate.split("/")[0]
@@ -196,17 +206,33 @@ def queryDateRanges():
             #    pubMonth = pubmedArticle['MedlineCitation']['Article']['ArticleDate'][0]['Month']
             #else:
             #    pubMonth = datetime.strptime(pubmedArticle['MedlineCitation']['Article']['Journal']['JournalIssue']['PubDate']['Month'], '%b').month
-
-            authorList = pubmedArticle['MedlineCitation']['Article']['AuthorList']
-            #print(str(len(authorList)))
             firstAuthorAffiliation = ""
-            if len(authorList[0]['AffiliationInfo']) > 0:
-                firstAuthorAffiliation = authorList[0]['AffiliationInfo'][0]['Affiliation']
-
             lastAuthorAffiliation = ""
-            if len(authorList[len(authorList)-1]['AffiliationInfo']) > 0:
-                lastAuthorAffiliation = authorList[len(authorList)-1]['AffiliationInfo'][0]['Affiliation']
+            if 'AuthorList' in pubmedArticle['MedlineCitation']['Article'].keys():
+                authorList = pubmedArticle['MedlineCitation']['Article']['AuthorList']
+
+
+                if len(authorList[0]['AffiliationInfo']) > 0:
+                    firstAuthorAffiliation = authorList[0]['AffiliationInfo'][0]['Affiliation']
+
+
+                if len(authorList[len(authorList)-1]['AffiliationInfo']) > 0:
+                    lastAuthorAffiliation = authorList[len(authorList)-1]['AffiliationInfo'][0]['Affiliation']
+
+
             lCovidPubsDetails.append({"doi": doi,
+                                      "PMID": pubmedID,
+                                     "journalISOAbbreviation": journalISOAbbreviation,
+                                     "journalISSN": journalISSN,
+                                     "articleTitle": articleTitle,
+                                     "pubYear": pubYear,
+                                     "pubMonth": pubMonth,
+                                     "language": language,
+                                     "firstAuthorAffiliation": firstAuthorAffiliation,
+                                     "lastAuthorAffiliation": lastAuthorAffiliation,
+                                     "articleAbstract": articleAbstract})
+            lCovidPubsDetailsByWeek.append({"doi": doi,
+                                     "PMID": pubmedID,
                                      "journalISOAbbreviation": journalISOAbbreviation,
                                      "journalISSN": journalISSN,
                                      "articleTitle": articleTitle,
@@ -217,10 +243,15 @@ def queryDateRanges():
                                      "lastAuthorAffiliation": lastAuthorAffiliation,
                                      "articleAbstract": articleAbstract})
 
-
+        dfCovidPubsDetailsByWeek = pd.DataFrame(lCovidPubsDetailsByWeek)
+        weeklyDetailsFile = os.path.join(outputFolder, os.path.basename(dateRangesFile).split(".")[0]
+                    + "__" + startDate.replace("/","") + "__" + endDate.replace("/","") + "__details.tsv")
+        dfCovidPubsDetailsByWeek.to_csv(weeklyDetailsFile, sep="\t")
 
     dfCovidPubsByWeek = pd.DataFrame(lCovidPubsByWeek)
+
     dfCovidPubsDetails = pd.DataFrame(lCovidPubsDetails)
+
 
 
 
@@ -267,6 +298,7 @@ def submitEntrezQuery(query):
 
 def main(argv=None): # IGNORE:C0111
 
+    submitEntrezQuery()
     setlocale(LC_NUMERIC, 'no_NO')
     if argv is None:
         argv = sys.argv
