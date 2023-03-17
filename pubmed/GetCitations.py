@@ -89,17 +89,21 @@ def parseArgs(argv):
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument("-i", "--input_file", dest="inputfile", action="store", help="list of pubmed IDs [default: %(default)s]")
-        #parser.add_argument("-q", "--query_string", dest="basequerystring", action="store", help="base query string  [default: %(default)s]")
+        parser.add_argument("-d", "--details_file", dest="detailsfile", action="store", help="base query string  [default: %(default)s]")
 
         # Process arguments
         args = parser.parse_args()
 
         global inputFile
-        #global baseQueryString
+        global detailsFile
         inputFile = args.inputfile
-        #baseQueryString = args.basequerystring
+        detailsFile = args.detailsfile
 
-        print("input file is <" + inputFile + ">")
+        if inputFile:
+            print("input file is <" + inputFile + ">")
+        if detailsFile:
+            print("details file is <" + detailsFile + ">")
+            inputFile = detailsFile
         #print("base query string is <" + baseQueryString + ">")
 
 
@@ -115,7 +119,44 @@ def parseArgs(argv):
         sys.stderr.write(indent + "  for help use --help")
         return 2
 
-def reformatData():
+def parseDetailsFile():
+    outputFolder = os.path.dirname(inputFile)
+    outputFile = os.path.join(outputFolder, os.path.basename(inputFile).split(".")[0] + "__wCitations.tsv")
+
+    fDetails = open(detailsFile, "r")
+    pubmedEntryLines = fDetails.readlines()
+    fDetails .close()
+    logging.info("read <" + str(len(pubmedEntryLines)) + "> lines")
+    fPMIDs = open(outputFile, "w")
+    fPMIDs.write("id" + "\t" + pubmedEntryLines[0].strip() + "\tcitationCount" + "\tcitationSet" + "\n")
+    fPMIDs.close()
+
+
+    Entrez.email = 'cyanidebunny@gmail.com'
+    p=0
+    for pubmedEntry in pubmedEntryLines:
+        p+=1
+        qPMID = pubmedEntry.split("\t")[2].strip()
+        if qPMID == 'PMID':
+            logging.info("hit header line")
+            continue
+        links = Entrez.elink(dbfrom="pubmed", id=qPMID, retmax=100000, linkname="pubmed_pubmed_citedin")
+        record = Entrez.read(links)
+        citationIDs = ""
+        linkList=[]
+        if len(record[0][u'LinkSetDb']) > 0:
+            records = record[0][u'LinkSetDb'][0][u'Link']
+            for link in records:
+                linkList.append(link[u'Id'])
+            citationIDs = ",".join(linkList)
+
+        pubmedEntry = pubmedEntry.strip() + "\t" + str(len(linkList)) + "\t" + citationIDs + "\n"
+        fPMIDs = open(outputFile, "a")
+        fPMIDs.write(pubmedEntry)
+        fPMIDs.close()
+
+
+def parsePMIDList():
     outputFolder = os.path.dirname(inputFile)
     outputFile = os.path.join(outputFolder, os.path.basename(inputFile).split(".")[0] + "__citations.tsv")
     fPMIDs = open(outputFile, "w")
@@ -128,7 +169,7 @@ def reformatData():
     Entrez.email = 'cyanidebunny@gmail.com'
     for qPMID in qPMIDs:
 
-        links = Entrez.elink(dbfrom="pubmed", id=qPMID, retmax=100000, linkname="pubmed_pubmed")
+        links = Entrez.elink(dbfrom="pubmed", id=qPMID, retmax=100000, linkname="pubmed_pubmed_citedin")
         record = Entrez.read(links)
         records = record[0][u'LinkSetDb'][0][u'Link']
         linkList=[]
@@ -141,7 +182,6 @@ def reformatData():
 
 
 
-
 def main(argv=None): # IGNORE:C0111
 
     setlocale(LC_NUMERIC, 'no_NO')
@@ -151,7 +191,11 @@ def main(argv=None): # IGNORE:C0111
     md5String = hashlib.md5(b"CBGAMGOUS").hexdigest()
     parseArgs(argv)
     initLogger(md5String)
-    reformatData()
+    if detailsFile:
+        parseDetailsFile()
+    else:
+        parsePMIDList()
+
 
 
 if __name__ == '__main__':
