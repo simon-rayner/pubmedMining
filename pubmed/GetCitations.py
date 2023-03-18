@@ -136,6 +136,11 @@ def parseDetailsFile():
     p=0
     for pubmedEntry in pubmedEntryLines:
         p+=1
+        logging.info("--processing entry <" + str(p) + " of " + "> " + str(str(len(pubmedEntryLines))))
+        if len(pubmedEntry.split("\t")) == 1:
+            logging.info("something weird with this entry - skipping")
+            logging.info(pubmedEntry)
+            continue
         qPMID = pubmedEntry.split("\t")[2].strip()
         if qPMID == 'PMID':
             logging.info("hit header line")
@@ -149,7 +154,7 @@ def parseDetailsFile():
             for link in records:
                 linkList.append(link[u'Id'])
             citationIDs = ",".join(linkList)
-
+        logging.info("---- found <" + str(len(linkList)) +  "> citations")
         pubmedEntry = pubmedEntry.strip() + "\t" + str(len(linkList)) + "\t" + citationIDs + "\n"
         fPMIDs = open(outputFile, "a")
         fPMIDs.write(pubmedEntry)
