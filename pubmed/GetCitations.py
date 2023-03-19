@@ -120,12 +120,13 @@ def parseArgs(argv):
         return 2
 
 def parseDetailsFile():
+
     outputFolder = os.path.dirname(inputFile)
     outputFile = os.path.join(outputFolder, os.path.basename(inputFile).split(".")[0] + "__wCitations.tsv")
 
-    fDetails = open(detailsFile, "r")
-    pubmedEntryLines = fDetails.readlines()
-    fDetails .close()
+    #fDetails = open(detailsFile, "r")
+    #pubmedEntryLines = fDetails.readlines()
+    #fDetails .close()
     logging.info("read <" + str(len(pubmedEntryLines)) + "> lines")
     fPMIDs = open(outputFile, "w")
     fPMIDs.write("id" + "\t" + pubmedEntryLines[0].strip() + "\tcitationCount" + "\tcitationSet" + "\n")
@@ -137,11 +138,14 @@ def parseDetailsFile():
     for pubmedEntry in pubmedEntryLines:
         p+=1
         logging.info("--processing entry <" + str(p) + " of " + "> " + str(str(len(pubmedEntryLines))))
-        if len(pubmedEntry.split("\t")) == 1:
+        qPMID = ""
+        try:
+            qPMID = pubmedEntry.split("\t")[2].strip()
+        except:
             logging.info("something weird with this entry - skipping")
             logging.info(pubmedEntry)
             continue
-        qPMID = pubmedEntry.split("\t")[2].strip()
+        #qPMID = pubmedEntry.split("\t")[2].strip()
         if qPMID == 'PMID':
             logging.info("hit header line")
             continue
@@ -185,6 +189,43 @@ def parsePMIDList():
         fPMIDs.write(linkList[0] + "\t" + str(len(citationIDs)) + "\t" + citationIDs + "\n")
         fPMIDs.close()
 
+def cleanDetailsFile():
+
+    outputFolder = os.path.dirname(inputFile)
+    outputFile = os.path.join(outputFolder, os.path.basename(inputFile).split(".")[0] + "__cleaned.tsv")
+    global pubmedEntryLines
+    fDetails = open(detailsFile, "r")
+    pubmedEntryLines = fDetails.readlines()
+    fDetails .close()
+    logging.info("read <" + str(len(pubmedEntryLines)) + "> lines")
+
+    global cleanedEntries
+    cleanedEntries = []
+    cleanedEntries.append(pubmedEntryLines[0])
+    pubmedLineNo = 1
+    cleanCount = 0
+    while pubmedLineNo < len(pubmedEntryLines):
+        # is first column an integer?
+
+        try:
+            int(pubmedEntryLines[pubmedLineNo].split("\t")[0])
+            cleanedEntries.append(pubmedEntryLines[pubmedLineNo])
+        except:
+            cleanedEntries[len(cleanedEntries)-1] = cleanedEntries[len(cleanedEntries)-1].replace("\n", " ") + pubmedEntryLines[pubmedLineNo]
+            cleanCount += 1
+
+        pubmedLineNo+=1
+
+    logging.info("performed <" + str(cleanCount) + "> cleaning actions")
+    logging.info("removed <" + str(len(pubmedEntryLines) - len(cleanedEntries)) + "> lines")
+    logging.info("there are now <" + str(len(cleanedEntries)) + "> pubmed entries to parse")
+
+    fCleaned = open(outputFile, "w")
+    for cleanedEntry in cleanedEntries:
+      fCleaned.write(cleanedEntry)
+    fCleaned.close()
+
+    pubmedEntryLines = cleanedEntries
 
 
 def main(argv=None): # IGNORE:C0111
@@ -197,6 +238,7 @@ def main(argv=None): # IGNORE:C0111
     parseArgs(argv)
     initLogger(md5String)
     if detailsFile:
+        cleanDetailsFile()
         parseDetailsFile()
     else:
         parsePMIDList()

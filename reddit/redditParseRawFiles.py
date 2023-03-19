@@ -1,5 +1,5 @@
 
-import ast
+
 import json
 import sys
 import os
@@ -12,22 +12,21 @@ from pathlib import Path
 
 from argparse import ArgumentParser
 from argparse import RawDescriptionHelpFormatter
-from locale import atof, setlocale, LC_NUMERIC
-from Bio import Entrez
+from locale import  setlocale, LC_NUMERIC
+
 
 __all__ = []
 __version__ = 0.1
 __date__ = '2022-04-19'
 __updated__ = '2022-04-19'
 
-import pandas as pd
 
 DEBUG = 1
 TESTRUN = 0
 PROFILE = 0
 
 class CLIError(Exception):
-    '''Generic exception to raise and log different fatal errors.'''
+    """Generic exception to raise and log different fatal errors."""
     def __init__(self, msg):
         super(CLIError).__init__(type(self))
         self.msg = "E: %s" % msg
@@ -330,7 +329,8 @@ def parseSubmissionFileList():
             ### selftext
             selftext = ""
             try:
-                selftext = result['selftext']
+                selftext = result['selftext'].strip()
+                selftext = selftext.replace("\n", "").replace("\t","")
             except:
                 selftext = 'missing'
 
@@ -344,7 +344,7 @@ def parseSubmissionFileList():
             ### url
             url = ""
             try:
-                url = result['url']
+                url = result['url'].replace("\n", "").replace("\t","").replace("\r","")
             except:
                 url = 'missing'
 
@@ -416,7 +416,7 @@ def parseSubmissionFileList():
 
             fOut.write(outputLine)
             s+=1
-    fOut.close()
+        fOut.close()
     logging.info("processed <" + str(s) + "> entries")
 
 
@@ -491,6 +491,14 @@ def parseCommentFileList():
                 fullKeyList.extend(diff)
 
 
+
+            ### associated_award
+            associated_award = ""
+            try:
+                associated_award = result['associated_award']
+            except:
+                associated_award = 'missing'
+
             ### Author
             author = ""
             try:
@@ -498,19 +506,34 @@ def parseCommentFileList():
             except:
                 author = 'missing'
 
-            ### category
-            category = ""
+            ### body
+            body = ""
             try:
-                category = result['category']
+                body = result['body'].strip()
+                body = body.replace("\n", "").replace("\t","").replace("\r","")
             except:
-                category = 'missing'
+                body = 'missing'
 
-            ### contest_mode
-            contest_mode = ""
+            ### collapsed_because_crowd_control
+            collapsed_because_crowd_control = ""
             try:
-                contest_mode = result['contest_mode']
+                collapsed_because_crowd_control = result['collapsed_because_crowd_control']
             except:
-                contest_mode = 'missing'
+                collapsed_because_crowd_control = 'missing'
+
+            ### collapsed_reason
+            collapsed_reason = ""
+            try:
+                collapsed_reason = result['collapsed_reason']
+            except:
+                collapsed_reason = 'missing'
+
+            ### collapsed
+            collapsed = ""
+            try:
+                collapsed = result['collapsed']
+            except:
+                collapsed = 'missing'
 
             ### created_utc
             created_utc = ""
@@ -519,19 +542,6 @@ def parseCommentFileList():
             except:
                 created_utc = 'missing'
 
-            ### crosspost_parent
-            crosspost_parent = ""
-            try:
-                crosspost_parent = result['crosspost_parent']
-            except:
-                crosspost_parent = 'missing'
-
-            ### discussion_type
-            discussion_type = ""
-            try:
-                discussion_type = result['discussion_type']
-            except:
-                discussion_type = 'missing'
 
             ### distinguished
             distinguished = ""
@@ -540,12 +550,12 @@ def parseCommentFileList():
             except:
                 distinguished = 'missing'
 
-            ### gilded
-            gilded = ""
+            ### controversiality
+            controversiality = ""
             try:
-                gilded = result['gilded']
+                controversiality = result['controversiality']
             except:
-                gilded = 'missing'
+                controversiality = 'missing'
 
             ### contest_mode
             contest_mode = ""
@@ -562,11 +572,11 @@ def parseCommentFileList():
                 id = 'missing'
 
             ### linkid
-            linkid = ""
+            link_id = ""
             try:
-                linkid = result['linkid']
+                link_id = result['link_id']
             except:
-                linkid = 'missing'
+                link_id = 'missing'
 
             ### locked
             locked = ""
@@ -575,40 +585,13 @@ def parseCommentFileList():
             except:
                 locked = 'missing'
 
-            ### contest_mode
-            contest_mode = ""
-            try:
-                contest_mode = result['contest_mode']
-            except:
-                contest_mode = 'missing'
 
-            ### no_follow
-            no_follow = ""
+            ### parent_id
+            parent_id = ""
             try:
-                no_follow = result['no_follow']
+                parent_id = result['parent_id']
             except:
-                no_follow = 'missing'
-
-            ### num_comments
-            num_comments = ""
-            try:
-                num_comments = result['num_comments']
-            except:
-                num_comments = 'missing'
-
-            ### num_crossposts
-            num_crossposts = ""
-            try:
-                num_crossposts = result['num_crossposts']
-            except:
-                num_crossposts = 'missing'
-
-            ### over_18
-            over_18 = ""
-            try:
-                over_18 = result['over_18']
-            except:
-                over_18 = 'missing'
+                parent_id = 'missing'
 
             ### permalink
             permalink = ""
@@ -616,13 +599,6 @@ def parseCommentFileList():
                 permalink = result['permalink']
             except:
                 permalink = 'missing'
-
-            ### pwls
-            pwls = ""
-            try:
-                pwls = result['pwls']
-            except:
-                pwls = 'pwls'
 
             ### quarantine
             quarantine = ""
@@ -666,19 +642,6 @@ def parseCommentFileList():
             except:
                 score = 'missing'
 
-            ### selftext
-            selftext = ""
-            try:
-                selftext = result['selftext']
-            except:
-                selftext = 'missing'
-
-            ### subreddit_subscribers
-            subreddit_subscribers = ""
-            try:
-                subreddit_subscribers = result['subreddit_subscribers']
-            except:
-                subreddit_subscribers = 'missing'
 
             ### url
             url = ""
@@ -694,11 +657,6 @@ def parseCommentFileList():
             except:
                 total_awards_received = 'missing'
 
-            title = ""
-            try:
-                title = result['title']
-            except:
-                title = 'missing'
 
             fullName = ""
             try:
@@ -706,95 +664,56 @@ def parseCommentFileList():
             except:
                 fullName = 'missing'
 
-            upvoteRatio = ""
-            try:
-                upvoteRatio = str(result['upvote_ratio'])
-            except:
-                upvoteRatio = 'missing'
-
-
-            viewCount = ""
-            try:
-                viewCount = str(result['view_count'])
-            except:
-                viewCount = 'missing'
-
-            outputLine = title \
-                     + "\t" + str(fullName) \
-                     + "\t" + str(upvoteRatio) \
-                     + "\t" + str(num_comments) \
-                     + "\t" + str(quarantine) \
-                     + "\t" + str(viewCount) \
-                     + "\t" + str(url)   \
+            outputLine = str(fullName) \
                      + "\t" + str(author) \
-                     + "\t" + str(category) \
-                     + "\t" + str(contest_mode) \
-                     + "\t" + str(created_utc) \
-                     + "\t" + str(crosspost_parent) \
-                     + "\t" + str(discussion_type) \
-                     + "\t" + str(distinguished) \
-                     + "\t" + str(gilded) \
-                     + "\t" + str(contest_mode) \
                      + "\t" + str(id) \
-                     + "\t" + str(linkid) \
+                     + "\t" + str(link_id) \
+                     + "\t" + str(body) \
+                     + "\t" + str(collapsed_because_crowd_control) \
+                     + "\t" + str(collapsed_reason) \
+                     + "\t" + str(collapsed)   \
+                     + "\t" + str(controversiality) \
+                     + "\t" + str(created_utc) \
+                     + "\t" + str(distinguished) \
+                     + "\t" + str(contest_mode) \
                      + "\t" + str(locked) \
                      + "\t" + str(contest_mode) \
-                     + "\t" + str(no_follow) \
-                     + "\t" + str(num_comments) \
-                     + "\t" + str(num_crossposts) \
-                     + "\t" + str(over_18) \
                      + "\t" + str(permalink) \
-                     + "\t" + str(pwls) \
                      + "\t" + str(removal_reason) \
                      + "\t" + str(removed_by) \
                      + "\t" + str(removed_by_category) \
                      + "\t" + str(retrieved_on) \
                      + "\t" + str(score) \
-                     + "\t" + str(selftext) \
-                     + "\t" + str(subreddit_subscribers) \
                      + "\t" + str(total_awards_received) + "\n"
 
             fOut.write(outputLine)
             c+=1
-    fOut.close()
+        fOut.close()
     logging.info("processed <" + str(c) + "> entries")
 
 
 def getCommentHeaderLine():
-    headerLine = 'title' \
-             + "\t" + "fullName" \
-             + "\t" + "upvoteRatio" \
-             + "\t" + "numComments" \
-             + "\t" + "quarantine" \
-             + "\t" + "viewcount" \
-             + "\t" + "url"   \
+    headerLine = "fullName" \
              + "\t" + "author" \
-             + "\t" + "category" \
-             + "\t" + "contest_mode" \
-             + "\t" + "created_utc" \
-             + "\t" + "crosspost_parent" \
-             + "\t" + "discussion_type" \
-             + "\t" + "distinguished" \
-             + "\t" + "gilded" \
-             + "\t" + "contest_mode" \
              + "\t" + "id" \
-             + "\t" + "linkid" \
+             + "\t" + "link_id" \
+             + "\t" + "body" \
+             + "\t" + "collapsed_because_crowd_control" \
+             + "\t" + "collapsed_reason" \
+             + "\t" + "collapsed"   \
+             + "\t" + "controversiality" \
+             + "\t" + "created_utc" \
+             + "\t" + "distinguished" \
+             + "\t" + "contest_mode" \
              + "\t" + "locked" \
              + "\t" + "contest_mode" \
-             + "\t" + "no_follow" \
-             + "\t" + "num_comments" \
-             + "\t" + "num_crossposts" \
-             + "\t" + "over_18" \
              + "\t" + "permalink" \
-             + "\t" + "pwls" \
              + "\t" + "removal_reason" \
              + "\t" + "removed_by" \
              + "\t" + "removed_by_category" \
              + "\t" + "retrieved_on" \
              + "\t" + "score" \
-             + "\t" + "selftext" \
-             + "\t" + "subreddit_subscribers" \
-             + "\t" + "total_awards_received"+  "\n"
+             + "\t" + "total_awards_received" + "\n"
     return headerLine
 
 
