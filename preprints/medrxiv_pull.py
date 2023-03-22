@@ -95,18 +95,19 @@ def parseArgs(argv):
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument("-d", "--dates_file", dest="datesfile", action="store", help="list of dates to search [default: %(default)s]")
+        parser.add_argument("-s", "--source", dest="source", action="store", help="which archive? (biorxiv|medxiv|chemxiv|preprints) [default: %(default)s]")
 
         # Process arguments
         args = parser.parse_args()
 
         global datesFile
+        global source
 
         datesFile = args.datesfile
+        source = args.source
 
-
-        if datesFile:
-            print("dates file is <" + datesFile + ">")
-
+        print("dates file is <" + datesFile + ">")
+        print("source is <" + source + ">")
 
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
@@ -139,17 +140,34 @@ def pullBiorxivRecords():
         month = dateLine.strip().split("\t")[1].split("/")[1]
         day = dateLine.strip().split("\t")[1].split("/")[0]
 
+        # From biorxiv help
+        #     https://api.biorxiv.org/pubs/medrxiv/2020-03-01/2020-03-30/5
+        # will output metadata for the published version of the 100 medRxiv papers
+        # (if that many remain) published within the date range of
+        # 2020-03-01 to 2020-03-30 beginning from article 5.
+        #     https://api.biorxiv.org/pubs/biorxiv/2020-03-01/2020-03-30/5
+        # will do the same for bioRxiv papers for that period.
+        #
+        # The following example is wrong
         # response = requests.get("https://api.biorxiv.org/details/biorxiv/2017-11-16/2017-11-16")
         dateString = year + "-" + month + "-" + day
-        requestString0 = "https://api.biorxiv.org/details/biorxiv/" + dateString + "/" + dateString
+        if source=='biorxiv':
+            requestString0 = "https://api.biorxiv.org/pubs/biorxiv/" + dateString + "/" + dateString
+        if source=="medrxiv":
+            requestString0 = "https://api.biorxiv.org/pubs/medrxiv/" + dateString + "/" + dateString
         totalCount = 0
+        response = 0
         try:
             iter = 0
             response = requests.get(requestString0)
-            count = response.json()["messages"][0]["count"]
+            count = 0
+            if "count" in response.json()["messages"][0].keys():
+                count = response.json()["messages"][0]["count"]
+            else:
+                count = 0
             totalCount = count
 
-            logging.info("-- got <" + str(response.json()["messages"][0]["count"]) + "> papers")
+            logging.info("-- got <" + str(count) + "> papers")
             datesResultsFile = os.path.join(outputFolder, os.path.basename(datesFile).split(".")[0] + "__" + dateString + "__" + str(iter) + ".tsv")
             with open(datesResultsFile, "w") as resultsfile:
                 resultsfile.write(str(response.json()))
@@ -158,8 +176,13 @@ def pullBiorxivRecords():
                 iter += 1
                 requestString = requestString0 + "/" + str(totalCount)
                 response = requests.get(requestString)
-                count = response.json()["messages"][0]["count"]
-                logging.info("-- got <" + str(response.json()["messages"][0]["count"]) + "> papers")
+                count = 0
+                if "count" in response.json()["messages"][0].keys():
+                    count = response.json()["messages"][0]["count"]
+                else:
+                    count = 0
+
+                logging.info("-- got <" + str(count) + "> papers")
                 totalCount = totalCount + count
                 datesResultsFile = os.path.join(outputFolder, os.path.basename(datesFile).split(".")[0] + "__" + dateString + "__" + str(iter) + ".tsv")
                 with open(datesResultsFile, "w") as resultsfile:
@@ -174,7 +197,8 @@ def pullBiorxivRecords():
             with open(datesResultsFile, "w") as resultsfile:
                 resultsfile.write(str(response.json()))
         except:
-            logging.info("failed on request string <" + requestString + ">")
+            logging.info("failed on request string <" + requestString0 + ">")
+            logging.info("response code was " + str(response))
 
     #dfPaperCount = pd.DataFrame(paperCount)
     #dfPaperCount.to_csv(outputFile, sep="\t")
