@@ -15,8 +15,9 @@ from argparse import RawDescriptionHelpFormatter
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-
+from sklearn.decomposition import PCA
 from scipy.sparse import csr_matrix
+
 import requests
 
 __all__ = []
@@ -72,7 +73,6 @@ def initLogger(md5string):
     logging.info("+" + "*"*78 + "+")
     logging.debug("debug mode is on")
 
-
 def parseArgs(argv):
     '''parse out Command line options.'''
 
@@ -101,9 +101,11 @@ def parseArgs(argv):
         parser.add_argument("-i","--citations_file", dest="citationsfile", action="store", help="list of citations [default: %(default)s]")
         parser.add_argument('-n','--ncomponents', dest="ncomponents", action="store", help= 'Number of components to use', default=5)
         parser.add_argument('-c','--cluster', dest="cluster", action="store", help= 'Number of clusters to use', default=3)
-        parser.add_argument('-m','--mode', dest="mode", action="store", help= 'Test, kcluster (K-Means Clustering) or acluster(Agglomerative Clustering *)')
         parser.add_argument('-a','--affinity', dest="affinity", action="store", help= 'To be used along with Agglomerative Clustering. Can be “euclidean”, “l1”, “l2”, “manhattan”, “cosine”, default is cosine', default='cosine')
         parser.add_argument('-l','--abstract_length', dest="minabstractlength", action="store", help= 'min abstract length', default=100)
+        parser.add_argument('-w','--window_size', dest="windowsize", action="store", help= 'sliding window size for sampling citations', default=10000)
+        parser.add_argument('-s','--step_size', dest="stepsize", action="store", help= 'step size for sliding window', default=1000)
+
 
         # Process arguments
         args = parser.parse_args()
@@ -111,29 +113,27 @@ def parseArgs(argv):
         global citationsFile
         global ncomponents
         global ncluster
-        global mode
         global affinity
         global minAbstractLength
+        global windowSize
+        global stepSize
 
 
         citationsFile = args.citationsfile
-
-        ncomponents = 5
-        if args.ncomponents:
-            ncomponents = args.ncomponents
-
-        ncluster = 3
-        if args.cluster:
-            ncluster = args.cluster
-        mode = args.mode
+        ncomponents = args.ncomponents
+        ncluster = args.cluster
         affinity = args.affinity
-
         minAbstractLength = args.minabstractlength
-
-        #source = args.source
+        windowSize = args.windowsize
+        stepSize = args.stepsize
 
         print("citationsFile file is <" + citationsFile + ">")
-        #print("source is <" + source + ">")
+        print("ncomponents is <" + str(ncomponents) + ">")
+        print("number of clusters is <" + str(ncluster) + ">")
+        print("affinity is <" + str(affinity) + ">")
+        print("minimum abstract length is <" + str(minAbstractLength) + ">")
+        print("window size is <" + str(windowSize) + ">")
+        print("step size is <" + str(stepSize) + ">")
 
     except KeyboardInterrupt:
         ### handle keyboard interrupt ###
@@ -147,29 +147,6 @@ def parseArgs(argv):
         sys.stderr.write(indent + "  for help use --help")
         return 2
 
-def test(variance,X,ncomponents):
-    import matplotlib.pyplot as plt
-    from sklearn.decomposition import TruncatedSVD
-    tsvd = TruncatedSVD(n_components=ncomponents)
-    fig, (ax1, ax2) = plt.subplots(2,1)
-    PC = range(1, tsvd.n_components+1)
-    ax1.bar(PC, variance, color='red')
-
-
-    ##Kmeans inertias evaluation
-    from sklearn.cluster import KMeans
-    inertias = []
-    for k in range(1,10):
-        model = KMeans(n_clusters=k)
-        model.fit(X[:,:3])
-        inertias.append(model.inertia_)
-    ##Plot
-    ax2.plot(range(1,10), inertias, '-p', color='red')
-    ax1.set_title('PCA Components')
-    ax2.set_title('Clusters')
-    plt.show()
-    return()
-
 def loadCitations():
     global dfCitations
     dfRaw=pd.read_csv(citationsFile, sep='\t')
@@ -178,10 +155,58 @@ def loadCitations():
     dfCitations = dfRaw[dfRaw['articleAbstract'].str.len()>minAbstractLength]
     logging.info("after filtering for short abstracts have <" + str(len(dfCitations)) + "> citation entries ")
 
-
 def calcCitationSimilarities():
+    from io import BytesIO
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
     countvectorizer = TfidfVectorizer(stop_words='english')
+
     data=dfCitations['articleAbstract']
+
+    startRow = 0
+    outputFolder = os.path.dirname(citationsFile)
+    outputFileCountPrecursor = os.path.join(outputFolder, os.path.basename(citationsFile).split(".")[0])
+    noOfIterations = (len(dfCitations['articleAbstract']) - windowSize)/stepSize
+    inc = 0
+    while startRow + windowSize < len(dfCitations['articleAbstract']):
+        logging.info("processing <" + str(inc) + "> of <" + str(int(noOfIterations)) + "> iterations")
+        dfSubSet = dfCitations[startRow:startRow + windowSize]['articleAbstract']
+        vectorSubSet = countvectorizer.fit_transform(dfSubSet)
+        vnamesSubSet = countvectorizer.get_feature_names_out()
+        dfWordMatrixSubSet = wm2df(vectorSubSet,vnamesSubSet)
+        startRow += stepSize
+        tsvdSubSet = TruncatedSVD(n_components=ncomponents)
+        dfSparseWordMatrixSubSet = csr_matrix(dfWordMatrixSubSet)
+        X_sparse_tsvd = tsvdSubSet.fit(dfSparseWordMatrixSubSet).transform(dfSparseWordMatrixSubSet)
+
+
+        # PCA analysis
+        from sklearn.decomposition import PCA
+        pca = PCA(n_components=2)
+        pca = PCA(n_components = 2)
+        pcaFeatures = pca.fit_transform(X_sparse_tsvd)
+
+        dfPCA = pd.DataFrame(
+            data=pcaFeatures,
+            columns=['PC1', 'PC2'])
+        X_principal = pca.fit_transform(X_sparse_tsvd)
+        X_principal = pd.DataFrame(X_principal)
+        X_principal.columns = ['P1', 'P2']
+        import matplotlib.pyplot as plt
+        sns.set()
+        sns.lmplot(
+            x='PC1',
+            y='PC2',
+            data=dfPCA,
+            fit_reg=False,
+            legend=True,
+            )
+        plt.ylim(-0.5, 0.5)
+        plt.xlim(-0.5, 0.5)
+        plt.title(os.path.basename(citationsFile).split(".")[0] + ":" + str(inc) + ":" + str(startRow + windowSize))
+        #plt.show()
+        plt.savefig(outputFileCountPrecursor + "__" + str(inc) + ".png")
+        plt.close()
+        inc += 1
 
 
     vector = countvectorizer.fit_transform(data)
@@ -191,38 +216,88 @@ def calcCitationSimilarities():
     tsvd = TruncatedSVD(n_components=ncomponents)
     X_sparse = csr_matrix(X)
     X_sparse_tsvd = tsvd.fit(X_sparse).transform(X_sparse)
+    from sklearn.decomposition import PCA
+    pca = PCA(n_components = 2)
+    pcaFeatures = pca.fit_transform(X_sparse_tsvd)
 
+    dfPCA = pd.DataFrame(
+        data=pcaFeatures,
+        columns=['PC1', 'PC2'])
+
+    sns.set()
+    sns.lmplot(
+        x='PC1',
+        y='PC2',
+        data=dfPCA,
+        hue='target',
+        fit_reg=False,
+        legend=True
+        )
+
+
+    import matplotlib.pyplot as plt
+    plt.figure(figsize =(8, 8))
+    plt.title('Visualising the data')
+    import scipy.cluster.hierarchy as shc
+    Dendrogram = shc.dendrogram((shc.linkage(X_principal, method ='ward')))
     #for index, row in dfCitations.iterrows():
 
     #### 2d Plots #############
     #sns.scatterplot(x=X_sparse_tsvd[:,1], y=X_sparse_tsvd[:,2], alpha=0.3)
-
+    from sklearn.cluster import AgglomerativeClustering
+    ac2 = AgglomerativeClustering(n_clusters = 2)
+    ac3 = AgglomerativeClustering(n_clusters = 3)
+    ac4 = AgglomerativeClustering(n_clusters = 4)
+    ac5 = AgglomerativeClustering(n_clusters = 5)
+    ac6 = AgglomerativeClustering(n_clusters = 6)
+    plt.figure(figsize =(6, 6))
+    plt.scatter(X_principal['P1'], X_principal['P2'],
+               c = ac2.fit_predict(X_principal), cmap ='rainbow')
+    plt.show()
     #########################
+    from sklearn.metrics import silhouette_score
+    silhouette_scores = []
+    silhouette_scores.append(
+            silhouette_score(X_principal, ac2.fit_predict(X_principal)))
+    silhouette_scores.append(
+            silhouette_score(X_principal, ac3.fit_predict(X_principal)))
+    silhouette_scores.append(
+            silhouette_score(X_principal, ac4.fit_predict(X_principal)))
+    silhouette_scores.append(
+            silhouette_score(X_principal, ac5.fit_predict(X_principal)))
+    silhouette_scores.append(
+            silhouette_score(X_principal, ac6.fit_predict(X_principal)))
 
-    if mode=='test':
-        ###PCA componentsevaluation
-        test(tsvd.explained_variance_ratio_,X_sparse_tsvd,ncomponents)
+    k = [2, 3, 4, 5, 6]
+    plt.bar(k, silhouette_scores)
+    plt.xlabel('Number of clusters', fontsize = 20)
+    plt.ylabel('S(i)', fontsize = 20)
+    plt.show()
 
 
-    if mode=='kcluster':
-        #Cluster by Kmeans
-        cluster(ncluster, X_sparse_tsvd, dfCitations['PMID'])
 
 
-    #Calculate the distance matrix
-    if mode=="acluster":
-        cosinef(X,X_sparse_tsvd,ncluster,dfCitations['PMID'])
+    #Cluster by Kmeans
+    model =cluster(ncluster, X_sparse_tsvd)
+    labels = model.predict(X[:,:2])
+    plotCluster(labels, X, dfCitations['PMID'])
+
+
+    cosinef(X,X_sparse_tsvd,ncluster,dfCitations['PMID'])
 
 
 ###Cluster by Kmeans
-def cluster(ncluster,X,pmid):
+def cluster(ncluster,X):
     from sklearn.cluster import KMeans
     import matplotlib.pyplot as plt
     model = KMeans(n_clusters=ncluster)
     model.fit(X[:,:2])
-    labels = model.predict(X[:,:2])
 
+    return model
+
+def plotCluster(labels, X, pmid):
     from mpl_toolkits.mplot3d import Axes3D
+    import matplotlib.pyplot as plt
     fig = plt.figure()
     ax = Axes3D(fig)
     ax.scatter(X[:,0],X[:,1],X[:,2], c=labels)
@@ -230,17 +305,19 @@ def cluster(ncluster,X,pmid):
         ax.text(X[i,0],X[i,1],X[i,2],pmid[i], size=8)
     plt.show()
 
-    return()
+
 
 ####Cosine similarity
 def cosinef(X,Xs,ncluster,pmid):
     from sklearn.cluster import AgglomerativeClustering
     import matplotlib.pyplot as plt
-    model=AgglomerativeClustering(affinity='cosine',n_clusters=ncluster,linkage='complete').fit(X)
+    model=AgglomerativeClustering(metric='cosine',n_clusters=ncluster,linkage='complete').fit(X)
     labels=model.labels_
     from mpl_toolkits.mplot3d import Axes3D
     fig = plt.figure()
     ax = Axes3D(fig)
+    auto_add_to_figure=False
+    fig.add_axes(ax, auto_add_to_figure=False)
     ax.scatter(Xs[:,0],Xs[:,1],Xs[:,2], c=labels)
     for i in range(0,len(pmid)):
         ax.text(Xs[i,0],Xs[i,1],Xs[i,2],pmid[i], size=8)
