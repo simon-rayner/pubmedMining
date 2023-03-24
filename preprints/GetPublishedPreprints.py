@@ -93,7 +93,7 @@ def parseArgs(argv):
         # Setup argument parser
         parser = ArgumentParser(description=program_license, formatter_class=RawDescriptionHelpFormatter)
         parser.add_argument("-b", "--biorxiv_file", dest="biorxivfile", action="store", help="biorxiv file containing submission metadata")
-        parser.add_argument("-m", "--medrxiv_file", dest="biorxivfile", action="store", help="medrxiv file containing submission metadata")
+        parser.add_argument("-m", "--medrxiv_file", dest="medrxivfile", action="store", help="medrxiv file containing submission metadata")
         parser.add_argument("-c", "--citation_file", dest="citationfile", action="store", help="medrxiv file containing submission metadata")
 
         # Process arguments
@@ -143,13 +143,16 @@ def loadData():
 
     fMedxriv = open(medrxivFile, "r")
     lMedrxivLines = fMedxriv.readlines()
-    logging.info("read <" + str(len(lMedrxivLines)) + "> medrxiv entries")
+    logging.info("read ~ <" + str(len(lMedrxivLines)) + "> medrxiv entries")
 
 
 def getBiorxivDOIs():
     # get subset of Citations that are biorxiv preprints
+    import re
     import json
+
     dfCitations['journal_name'] = ""
+    pattern = re.compile('(?<!\\\\)\'')
     biorPubCount = 0
     biorUPubCount = 0
     for index, row in dfCitations.iterrows():
@@ -160,9 +163,8 @@ def getBiorxivDOIs():
             # we need to extract the '10.1101/2020.05.13.093195', without the 'v' version information
             # so,
             biorxivID = row['url']
-            biorxivID = biorxivID.split("/")
-            biorxivIDpt1 = biorxivID.split("/")[5]
-            biorxivIDpt2 = biorxivID.split("/")[6]
+            biorxivIDpt1 = biorxivID.split("/")[4]
+            biorxivIDpt2 = biorxivID.split("/")[5]
             biorxivIDpt2 = biorxivIDpt2.split("v")[0]
             biorxivID = biorxivIDpt1 + "/" + biorxivIDpt2
 
@@ -170,13 +172,18 @@ def getBiorxivDOIs():
             for bioLine in lBiorxivLines:
                 if biorxivID in bioLine:
                     #'published_doi': '10.1039/D1LC00876E', 'published_journal': 'Lab on a Chip'
-                    thisDict = json.loads(bioLine)
+                    jsonReadyBioLine = pattern.sub('\"', bioLine).strip()[:-1]
+                    jsonReadyBioLine = jsonReadyBioLine[0:jsonReadyBioLine.rfind("}")+1]
+                    try:
+                        thisDict = json.loads(jsonReadyBioLine)
+                    except:
+                        logging.error(jsonReadyBioLine)
                     publishedDOI = thisDict['published_doi']
                     publishedJournal = thisDict['published_journal']
 
-                    dfCitations.iloc[index]['doi'] = publishedDOI
-                    dfCitations.iloc[index]['journal_name'] = publishedJournal
-                    dfCitations.iloc[index]['pub_category'] = 'PPP'
+                    dfCitations.loc[index,'doi'] = publishedDOI
+                    dfCitations.loc[index, 'journal_name'] = publishedJournal
+                    dfCitations.loc[index, 'pub_category'] = 'PPP'
 
                     match = True
                     biorPubCount += 1
@@ -184,9 +191,9 @@ def getBiorxivDOIs():
                     break
 
             if not match:
-                dfCitations.iloc[index]['doi'] = ""
-                dfCitations.iloc[index]['journal_name'] = "none"
-                dfCitations.iloc[index]['pub_category'] = 'PPU'
+                dfCitations.loc[index, 'doi'] = "none"
+                dfCitations.loc[index, 'journal_name'] = "none"
+                dfCitations.loc[index, 'pub_category'] = 'PPU'
                 biorUPubCount += 1
 
     logging.info("--found <" + str(biorPubCount + biorUPubCount) + "> biorxiv preprints")
@@ -197,7 +204,9 @@ def getBiorxivDOIs():
 def getMedrxivDOIs():
     # get subset of Citations that are medrxiv preprints
     import json
+    import re
     dfCitations['journal_name'] = ""
+    pattern = re.compile('(?<!\\\\)\'')
     medrPubCount = 0
     medrUPubCount = 0
     for index, row in dfCitations.iterrows():
@@ -208,35 +217,42 @@ def getMedrxivDOIs():
             # we need to extract the '10.1101/2020.05.13.093195', without the 'v' version information
             # so,
             medrxivID = row['url']
-            medrxivID = medrxivID.split("/")
-            medrxivIDpt1 = medrxivID.split("/")[5]
-            medrxivIDpt2 = medrxivID.split("/")[6]
+            medrxivIDpt1 = medrxivID.split("/")[4]
+            medrxivIDpt2 = medrxivID.split("/")[5]
             medrxivIDpt2 = medrxivIDpt2.split("v")[0]
             medrxivID = medrxivIDpt1 + "/" + medrxivIDpt2
 
             match = False
-            for bioLine in lBiorxivLines:
-                if medrxivID in bioLine:
+            for medLine in lMedrxivLines:
+                if medrxivID in medLine:
                     #'published_doi': '10.1039/D1LC00876E', 'published_journal': 'Lab on a Chip'
-                    thisDict = json.loads(bioLine)
+                    jsonReadyMedLine = pattern.sub('\"', medLine).strip()[:-1]
+                    jsonReadyMedLine = jsonReadyMedLine[0:jsonReadyMedLine.rfind("}")+1]
+                    try:
+                        thisDict = json.loads(jsonReadyMedLine)
+                    except:
+                        logging.error(str(index))
+                        logging.error(jsonReadyMedLine[0:80])
+                        logging.error(jsonReadyMedLine)
+
                     publishedDOI = thisDict['published_doi']
                     publishedJournal = thisDict['published_journal']
 
-                    dfCitations.iloc[index]['doi'] = publishedDOI
-                    dfCitations.iloc[index]['journal_name'] = publishedJournal
-                    dfCitations.iloc[index]['pub_category'] = 'PPP'
+                    dfCitations.loc[index, 'doi'] = publishedDOI
+                    dfCitations.loc[index, 'journal_name'] = publishedJournal
+                    dfCitations.loc[index, 'pub_category'] = 'PPP'
 
                     match = True
                     medrPubCount += 1
                     break
 
             if not match:
-                dfCitations.iloc[index]['doi'] = ""
-                dfCitations.iloc[index]['journal_name'] = "none"
-                dfCitations.iloc[index]['pub_category'] = 'PPU'
+                dfCitations.loc[index, 'doi'] = "none"
+                dfCitations.loc[index, 'journal_name'] = "none"
+                dfCitations.loc[index, 'pub_category'] = 'PPU'
                 medrUPubCount += 1
 
-    logging.info("--found <" + str(medrPubCount + medrUPubCount) + "> biorxiv preprints")
+    logging.info("--found <" + str(medrPubCount + medrUPubCount) + "> medrxiv preprints")
     logging.info("------- <" + str(medrPubCount) + "> were published")
     logging.info("------- <" + str(medrUPubCount) + "> were not ")
 
@@ -256,7 +272,7 @@ def main(argv=None): # IGNORE:C0111
     parseArgs(argv)
     initLogger(md5String)
     loadData()
-    getBiorxivDOIs()
+    #getBiorxivDOIs()
     getMedrxivDOIs()
     writeData()
 
