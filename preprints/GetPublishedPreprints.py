@@ -39,7 +39,7 @@ def initLogger(md5string):
     ''' setup log file based on project name'''
     projectBaseName = ""
 
-    projectBaseName = Path(datesFile).stem
+    projectBaseName = Path(citationFile).stem
 
     now = datetime.now()
     dt_string = now.strftime("%Y%m%d_%H%M%S")
@@ -129,19 +129,122 @@ def parseArgs(argv):
         return 2
 
 def loadData():
-    fBiorxiv = open(biorxivFile, "r")
-    fBiorxivLines = fBiorxiv.readlines()
 
-    fMedxriv = open(medrxivFile, "r")
-    fMedrxivLines = fMedxriv.readlines()
+    global dfCitations
+    global lBiorxivLines
+    global lMedrxivLines
 
     dfCitations = pd.read_csv(citationFile, sep="\t")
-    
+    logging.info("read <" + str(len(dfCitations)) + "> citations")
+
+    fBiorxiv = open(biorxivFile, "r")
+    lBiorxivLines = fBiorxiv.readlines()
+    logging.info("read ~ <" + str(len(lBiorxivLines)) + "> biorxiv entries")
+
+    fMedxriv = open(medrxivFile, "r")
+    lMedrxivLines = fMedxriv.readlines()
+    logging.info("read <" + str(len(lMedrxivLines)) + "> medrxiv entries")
+
 
 def getBiorxivDOIs():
+    # get subset of Citations that are biorxiv preprints
+    import json
+    dfCitations['journal_name'] = ""
+    biorPubCount = 0
+    biorUPubCount = 0
+    for index, row in dfCitations.iterrows():
+
+        if 'biorxiv' in row['url']:
+            # typical entry is of the form
+            #   https://www.biorxiv.org/content/10.1101/2020.05.13.093195v1?fbclid=IwAR1Xb79A0cGjORE2nwKTEvBb7y4-NBuD5oRf2wKWZfAhoCJ8_T73QSQfskw
+            # we need to extract the '10.1101/2020.05.13.093195', without the 'v' version information
+            # so,
+            biorxivID = row['url']
+            biorxivID = biorxivID.split("/")
+            biorxivIDpt1 = biorxivID.split("/")[5]
+            biorxivIDpt2 = biorxivID.split("/")[6]
+            biorxivIDpt2 = biorxivIDpt2.split("v")[0]
+            biorxivID = biorxivIDpt1 + "/" + biorxivIDpt2
+
+            match = False
+            for bioLine in lBiorxivLines:
+                if biorxivID in bioLine:
+                    #'published_doi': '10.1039/D1LC00876E', 'published_journal': 'Lab on a Chip'
+                    thisDict = json.loads(bioLine)
+                    publishedDOI = thisDict['published_doi']
+                    publishedJournal = thisDict['published_journal']
+
+                    dfCitations.iloc[index]['doi'] = publishedDOI
+                    dfCitations.iloc[index]['journal_name'] = publishedJournal
+                    dfCitations.iloc[index]['pub_category'] = 'PPP'
+
+                    match = True
+                    biorPubCount += 1
+
+                    break
+
+            if not match:
+                dfCitations.iloc[index]['doi'] = ""
+                dfCitations.iloc[index]['journal_name'] = "none"
+                dfCitations.iloc[index]['pub_category'] = 'PPU'
+                biorUPubCount += 1
+
+    logging.info("--found <" + str(biorPubCount + biorUPubCount) + "> biorxiv preprints")
+    logging.info("------- <" + str(biorPubCount) + "> were published")
+    logging.info("------- <" + str(biorUPubCount) + "> were not ")
 
 
+def getMedrxivDOIs():
+    # get subset of Citations that are medrxiv preprints
+    import json
+    dfCitations['journal_name'] = ""
+    medrPubCount = 0
+    medrUPubCount = 0
+    for index, row in dfCitations.iterrows():
 
+        if 'medrxiv' in row['url']:
+            # typical entry is of the form
+            #   https://www.medrxiv.org/content/10.1101/2020.05.13.093195v1?fbclid=IwAR1Xb79A0cGjORE2nwKTEvBb7y4-NBuD5oRf2wKWZfAhoCJ8_T73QSQfskw
+            # we need to extract the '10.1101/2020.05.13.093195', without the 'v' version information
+            # so,
+            medrxivID = row['url']
+            medrxivID = medrxivID.split("/")
+            medrxivIDpt1 = medrxivID.split("/")[5]
+            medrxivIDpt2 = medrxivID.split("/")[6]
+            medrxivIDpt2 = medrxivIDpt2.split("v")[0]
+            medrxivID = medrxivIDpt1 + "/" + medrxivIDpt2
+
+            match = False
+            for bioLine in lBiorxivLines:
+                if medrxivID in bioLine:
+                    #'published_doi': '10.1039/D1LC00876E', 'published_journal': 'Lab on a Chip'
+                    thisDict = json.loads(bioLine)
+                    publishedDOI = thisDict['published_doi']
+                    publishedJournal = thisDict['published_journal']
+
+                    dfCitations.iloc[index]['doi'] = publishedDOI
+                    dfCitations.iloc[index]['journal_name'] = publishedJournal
+                    dfCitations.iloc[index]['pub_category'] = 'PPP'
+
+                    match = True
+                    medrPubCount += 1
+                    break
+
+            if not match:
+                dfCitations.iloc[index]['doi'] = ""
+                dfCitations.iloc[index]['journal_name'] = "none"
+                dfCitations.iloc[index]['pub_category'] = 'PPU'
+                medrUPubCount += 1
+
+    logging.info("--found <" + str(medrPubCount + medrUPubCount) + "> biorxiv preprints")
+    logging.info("------- <" + str(medrPubCount) + "> were published")
+    logging.info("------- <" + str(medrUPubCount) + "> were not ")
+
+
+def writeData():
+    outputFolder = os.path.dirname(citationFile)
+    outputFileCounts = os.path.join(outputFolder, os.path.basename(citationFile).split(".")[0] + "__BiorMedrDOIs.tsv")
+    dfCitations.to_csv(outputFileCounts, sep="\t")
 
 def main(argv=None): # IGNORE:C0111
 
@@ -152,7 +255,10 @@ def main(argv=None): # IGNORE:C0111
     md5String = hashlib.md5(b"CBGAMGOUS").hexdigest()
     parseArgs(argv)
     initLogger(md5String)
-    pullBiorxivRecords()
+    loadData()
+    getBiorxivDOIs()
+    getMedrxivDOIs()
+    writeData()
 
 
 
