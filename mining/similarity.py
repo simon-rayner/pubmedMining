@@ -103,8 +103,8 @@ def parseArgs(argv):
         parser.add_argument('-c','--cluster', dest="cluster", action="store", help= 'Number of clusters to use', default=3)
         parser.add_argument('-a','--affinity', dest="affinity", action="store", help= 'To be used along with Agglomerative Clustering. Can be “euclidean”, “l1”, “l2”, “manhattan”, “cosine”, default is cosine', default='cosine')
         parser.add_argument('-l','--abstract_length', dest="minabstractlength", action="store", help= 'min abstract length', default=100)
-        parser.add_argument('-w','--window_size', dest="windowsize", action="store", help= 'sliding window size for sampling citations', default=10000)
-        parser.add_argument('-s','--step_size', dest="stepsize", action="store", help= 'step size for sliding window', default=1000)
+        parser.add_argument('-w','--window_size', dest="windowsize", action="store", help= 'sliding window size for sampling citations', default=400)
+        parser.add_argument('-s','--step_size', dest="stepsize", action="store", help= 'step size for sliding window', default=10)
 
 
         # Process arguments
@@ -192,6 +192,10 @@ def calcCitationSimilarities():
         X_principal = pd.DataFrame(X_principal)
         X_principal.columns = ['P1', 'P2']
         import matplotlib.pyplot as plt
+        dfPCA['title']=dfCitations[startRow:startRow + windowSize]['articleTitle']
+        dfPCA['abstract']=dfCitations[startRow:startRow + windowSize]['articleAbstract']
+        dfPCA['ID']=dfCitations[startRow:startRow + windowSize]['PMID']
+        dfPCA.to_csv(outputFileCountPrecursor + "__" + str(inc) + ".tsv", sep="\t")
         sns.set()
         sns.lmplot(
             x='PC1',

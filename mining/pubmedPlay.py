@@ -10,3 +10,5 @@ print("")
 pubCount = dfPubmed.groupby(['pubYear','pubMonth'])['doi'].count()
 df = pubCount.to_frame()
 df.to_csv("/Users/simonray/DropboxUiO/dropData/text_mining/mining/uniq_cites_count_by_month.tsv")
+
+
