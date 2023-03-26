@@ -84,17 +84,7 @@ for index, row in dfRedditByDate.iterrows():
 dfRedditByDate.to_csv("/Users/simonray/DropboxUiO/dropData/text_mining/mining/redditPlusPubmed.tsv", sep="\t")
 
 print(foundCount)
-dfRedditByDateCopy = dfRedditByDate
-dfRedditByDateCopy.loc[dfRedditByDateCopy['pub_category']=='PPP','pubcat2'] = 'ResearchPublication'
 
-import seaborn as sns
-import matplotlib.pyplot as plt
-sns.pairplot(dfRedditByDate, vars=['numComments', 'citationCount'],  hue='pubcat2', plot_kws=dict(s=80, edgecolor="blue", linewidth=2.5, alpha=0.3))
-
-
-sns.scatterplot(x='numComments', y='citationCount', data=dfRedditByDate, hue='pubcat2', alpha=0.6)
-plt.ylim(0, 100)
-plt.show()
 
 fig, ax = plt.subplots(1, figsize=(12,10))
 sns.scatterplot(y="pubcat2", x="numComments Score", data=dfRedditByDateCopy, marker='|', s=1000, color='k')
